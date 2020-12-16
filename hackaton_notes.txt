@@ -1,0 +1,89 @@
+Scan GIT repo
+    Input:
+        A GIT repository
+    Language:
+        Scala
+    Suggested libraries
+        Cats
+        scala-git??? or JGit???
+        Elastic4s
+    Challenges:
+        Find what library to use
+        Scan the commits to see what and how much people changed
+        Scan all directories to read how many lines of text are there
+        Score the people against the changes
+        ->Define the format inside elastic
+        Update document in Elastic
+    Output:
+        Documents inside elastic with info for each directory
+
+
+Simple REST API for frontend
+    Input:
+        Documents inside elastic with info for each directory
+        What information to fetch
+    Language:
+        Python
+    Suggested libraries
+        Flask https://flask.palletsprojects.com/en/1.1.x/quickstart/#a-minimal-application
+        ElasticSearch https://elasticsearch-py.readthedocs.io/en/7.10.0/
+    Challenges:
+        Create the actual endpoints
+        Query elastic
+    Output:
+        REST endpoint that returns the documents in elastic
+
+
+Visualize the data
+    Input:
+        Documents in elastic format
+        REST endpoint
+    Language:
+        JavaScript/TypeScript
+    Suggested libraries
+        SigmaJS
+    Challenges:
+        Query the endpoint
+        Transform the data received into Sigmajs format
+    Output
+        A graph that displays directories and what users have experience there
+        Display one directory at the time, when people click directory expands
+        Experience is cumulative per directory
+
+
+Criteria for Scoring
+    The "knowledge" K of a person in a directory is:
+        Inversely proportional to the time passed
+        Inversely proportional to the size of the project
+        Proportional to the relative changes (number of lines/total lines)
+        Proportional to how often the person changed the same code/directory
+    Notes
+        Nothing we can do for squashed commits
+        We could scan branches but they might never end up in master
+        "K" should be a pure number
+        Scores of subdirectories must add up for the parent directory
+
+Elastic format
+
+{
+    "path": "QuantexaExplorer",
+    "parent": "",
+    "directSubdirs": ["explorer-task", "acl"],
+    ...
+},
+{
+    "path": "QuantexaExplorer/explorer-task",
+    "parent": "QuantexaExplorer",
+    "directSubdirs": [],
+    ...
+},
+{
+    "path": "explorer-task/task-service/src/main/scala/com/quantexa/explorer/tasks/persistence/elastic/model/task",
+    "parent": "explorer-task/task-service/src/main/scala/com/quantexa/explorer/tasks/persistence/elastic/model"
+    "directSubdirs": [],
+    "totalLines": 123121,
+    "authors": {
+        "fabrizio_changed_line": 1133
+    }
+    ...
+}

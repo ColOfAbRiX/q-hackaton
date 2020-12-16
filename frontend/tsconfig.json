@@ -1,0 +1,30 @@
+{
+  "include": [
+    "src/*",
+    "src/**/*"
+  ],
+  "compilerOptions": {
+    "target": "ES2016",
+    "lib": [
+      "ES2016",
+      "DOM"
+    ],
+    "outDir": "./lib",
+    "outFile": "./lib/index.js",
+    "rootDir": "./src/",
+    "sourceRoot": "./src/",
+    "preserveConstEnums": true,
+    "removeComments": true,
+    "sourceMap": true,
+    // Compiler safeties
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    "strictFunctionTypes": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true,
+  }
+}
