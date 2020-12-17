@@ -15,10 +15,10 @@ object Main extends TaskApp {
   def run(args: List[String]): Task[ExitCode] =
     args.headOption match {
       case Some(targetDirectory) =>
-        val repoIndex = s"repoStats-${targetDirectory.md5}"
+        val repoIndex = s"repo-stats-${targetDirectory.md5}"
         for {
           indexPresent <- ElasticUtils.indexExists(repoIndex)
-          _            <- if (!indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
+          _            <- if (indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
           _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
           _            <- Task(println(s"Initialised $repoIndex"))
           logEntries   <- getLogEntries(targetDirectory)
@@ -61,7 +61,7 @@ object Main extends TaskApp {
       .map {
         _.map(GitLogEntry.fromOutput)
           .sortBy(_.datetime)
-          .take(1000) // NOTE: take(25) is just to have less data to test
+          .take(500) // NOTE: take(25) is just to have less data to test
       }
 
   /** Gets differences between each pair of commits */
