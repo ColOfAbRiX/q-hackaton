@@ -14,8 +14,9 @@ object Main extends App {
 
   val computation =
     for {
-      //indexPresent <- ElasticUtils.indexExists(repoIndex)
-      //_            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
+      indexPresent <- ElasticUtils.indexExists(repoIndex)
+      _            <- if (!indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
+      _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
       logEntries <- getLogEntries()
       _ <- processLogEntries(logEntries)
     } yield ()
