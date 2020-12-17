@@ -2,24 +2,27 @@ package hackaton
 
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
+
 import java.nio.file._
 import scala.annotation.tailrec
 
 object Main extends App {
 
-  val storage         = scala.collection.mutable.Map[RepoPath, StatsEntry]()
-  val targetDirectory = "../../../Desktop/metals"
-  val repoIndex       = "metals-repo"
+  val storage = scala.collection.mutable.Map[RepoPath, StatsEntry]()
+  val targetDirectory = "C:\\Users\\BarnabyMalaj\\.Git\\QuantexaExplorer"
+  val repoIndex = "metals-repo"
 
   val computation =
     for {
-      //indexPresent <- ElasticUtils.indexExists(repoIndex)
-      //_            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
+      indexPresent <- ElasticUtils.indexExists(repoIndex)
+      _            <- if (!indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
+      _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
       logEntries <- getLogEntries()
-      _          <- processLogEntries(logEntries)
+      _ <- processLogEntries(logEntries)
     } yield ()
 
   computation.runSyncUnsafe()
+
 
   val finalData = calculateScore(storage.toMap)
 
@@ -74,7 +77,7 @@ object Main extends App {
     Task.sequence(result) *> Task.unit
   }
 
-  /** Given  two commits it discovers the differences */
+  /** Given two commits it discovers the differences */
   private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
     Utils
       .run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
@@ -86,7 +89,7 @@ object Main extends App {
 
   /** Processes the differences between two commits */
   private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = Task {
-    val affectedDirectories =
+    val affectedDirectories: Map[RepoPath, RepoChanges] =
       diffs
         .groupBy { gitDiff =>
           Option(Paths.get(gitDiff.file.name).getParent)
@@ -95,13 +98,13 @@ object Main extends App {
         }
         .map {
           case (path, diffs) =>
-            val added   = diffs.map(_.added).sum
+            val added = diffs.map(_.added).sum
             val removed = diffs.map(_.removed).sum
             path -> RepoChanges(added, removed, added - removed)
         }
 
     for ((dir, changes) <- affectedDirectories) {
-      val statsEntry = storage.getOrElseUpdate(dir, StatsEntry(dir))
+      val statsEntry    = storage.getOrElseUpdate(dir, StatsEntry(dir))
       val newStatsEntry = applyChanges(statsEntry, commit.author, changes)
         .copy(parent = getParent(statsEntry.path))
 

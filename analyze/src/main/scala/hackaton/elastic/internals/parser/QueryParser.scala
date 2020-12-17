@@ -1,26 +1,25 @@
 package hackaton.elastic.internals.parser
 
-import hackaton.elastic.api.query.{
-  ExistsQuery, MatchQuery, QueryDefinition, RangeQuery, RegexQuery, TermQuery, TermsQuery,
-}
-import com.sksamuel.elastic4s.requests.searches.queries.matches.{ MatchQuery => E4SMatchQuery }
-import com.sksamuel.elastic4s.requests.searches.queries.term.{ TermQuery => E4STermQuery, TermsQuery => E4STermsQuery }
-import com.sksamuel.elastic4s.requests.searches.queries.{
-  ExistsQuery => E4SExistsQuery, Query => E4SQuery, RangeQuery => E4SRangeQuery, RegexQuery => E4SRegexQuery,
-}
+import hackaton.elastic.api.query.{BooleanQuery, ExistsQuery, MatchQuery, QueryDefinition, RangeQuery, RegexQuery, TermQuery, TermsQuery}
+import com.sksamuel.elastic4s.requests.searches.queries.matches.{MatchQuery => E4SMatchQuery}
+import com.sksamuel.elastic4s.requests.searches.queries.term.{TermQuery => E4STermQuery, TermsQuery => E4STermsQuery}
+import com.sksamuel.elastic4s.requests.searches.queries.{BoolQuery => E4SBoolQuery, ExistsQuery => E4SExistsQuery, Query => E4SQuery, RangeQuery => E4SRangeQuery, RegexQuery => E4SRegexQuery}
 import io.scalaland.chimney.dsl._
 
 object QueryParser {
 
   def parse(request: QueryDefinition): E4SQuery =
     request match {
-      case q @ ExistsQuery(_)            => parse(q)
-      case q @ TermQuery(_, _)           => parse(q)
-      case q @ TermsQuery(_, _)          => parse(q)
-      case q @ MatchQuery(_, _)          => parse(q)
-      case q @ RegexQuery(_, _)          => parse(q)
-      case q @ RangeQuery(_, _, _, _, _) => parse(q)
+      case q @ BooleanQuery(_, _, _, _, _)  => parse(q)
+      case q @ ExistsQuery(_)               => parse(q)
+      case q @ TermQuery(_, _)              => parse(q)
+      case q @ TermsQuery(_, _)             => parse(q)
+      case q @ MatchQuery(_, _)             => parse(q)
+      case q @ RegexQuery(_, _)             => parse(q)
+      case q @ RangeQuery(_, _, _, _, _)    => parse(q)
     }
+
+  def parse(request: BooleanQuery): E4SBoolQuery = request.transformInto[E4SBoolQuery]
 
   def parse(request: ExistsQuery): E4SExistsQuery = request.transformInto[E4SExistsQuery]
 
