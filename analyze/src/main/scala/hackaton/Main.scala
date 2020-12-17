@@ -35,6 +35,7 @@ object Main extends TaskApp {
         } yield ExitCode.Success
       case None =>
         Task(System.err.println("Usage: MyApp name")).as(ExitCode(2))
+
     }
 
   /** When all the data is available, calculate the scores */
@@ -48,7 +49,6 @@ object Main extends TaskApp {
             val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
             author -> stats.copy(score = userScore)
         }
-
         entry.copy(authors = authorsScores)
       }
       .toSeq
@@ -108,9 +108,9 @@ object Main extends TaskApp {
         }
 
     for ((dir, changes) <- affectedDirectories) {
-
-      val statsEntry    = storage.getOrElseUpdate(dir, StatsEntry(dir))
+      val statsEntry = storage.getOrElseUpdate(dir, StatsEntry(dir))
       val newStatsEntry = applyChanges(statsEntry, commit.author, changes)
+        .copy(parent = getParent(statsEntry.path))
 
       storage.update(dir, newStatsEntry)
       updateMyParent(newStatsEntry, commit.author, changes)
@@ -118,21 +118,20 @@ object Main extends TaskApp {
   }
 
   @tailrec
-  private def updateMyParent(child: StatsEntry, author: RepoAuthor, changes: RepoChanges): Unit = {
-    val maybeParent =
-      Option(Paths.get(child.path.name).getParent)
-        .map(x => RepoPath(x.toString))
-
-    maybeParent match {
+  private def updateMyParent(child: StatsEntry, author: RepoAuthor, changes: RepoChanges): Unit =
+    getParent(child.path) match {
       case None => ()
       case Some(parent) =>
-        val parentStat     = storage.getOrElseUpdate(parent, StatsEntry(parent))
-        val newParentStats = applyChanges(parentStat, author, changes).copy(children = parentStat.children + child.path)
+        val parentStat = storage.getOrElseUpdate(parent, StatsEntry(parent))
+        val newParentStats = applyChanges(parentStat, author, changes)
+          .copy(
+            children = parentStat.children + child.path,
+            parent = getParent(parentStat.path),
+          )
 
         storage.update(parent, newParentStats)
         updateMyParent(parentStat, author, changes)
     }
-  }
 
   /** Updates an entry with new statistics */
   private def applyChanges(entry: StatsEntry, author: RepoAuthor, changes: RepoChanges): StatsEntry = {
@@ -143,4 +142,9 @@ object Main extends TaskApp {
       changes = entry.changes + changes,
     )
   }
+
+  /** Returns the parent of the node, if it's not the root */
+  private def getParent(path: RepoPath): Option[RepoPath] =
+    Option(Paths.get(path.name).getParent)
+      .map(x => RepoPath(x.toString))
 }
