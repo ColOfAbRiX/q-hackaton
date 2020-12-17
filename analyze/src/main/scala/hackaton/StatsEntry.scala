@@ -23,6 +23,7 @@ final case class AuthorStats(
 
 final case class StatsEntry(
     path: RepoPath,
+    parent: Option[RepoPath] = None,
     children: Set[RepoPath] = Set.empty,
     changes: RepoChanges = RepoChanges(),
     authors: Map[RepoAuthor, AuthorStats] = Map.empty,
