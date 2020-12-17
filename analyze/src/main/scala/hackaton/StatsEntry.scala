@@ -18,7 +18,7 @@ final case class RepoChanges(
 
 final case class AuthorStats(
     changes: RepoChanges = RepoChanges(),
-    score: Int = 0,
+    score: Double = 0,
 )
 
 final case class StatsEntry(

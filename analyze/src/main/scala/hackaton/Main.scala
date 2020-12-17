@@ -21,18 +21,35 @@ object Main extends App {
 
   computation.runSyncUnsafe()
 
-  storage.foreach {
-    case (path, stats) =>
-      println(s"Changes for $path:")
-      println(s"  Changes: ${stats.changes}")
-      println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
-      println(s"  Authors:")
-      stats.authors.foreach {
-        case (author, authorStats) =>
-          println(s"    $author: $authorStats")
-      }
-      println("")
+  val finalData = calculateScore(storage.toMap)
+
+  finalData.foreach { stats =>
+    println(s"Changes for ${stats.path}:")
+    println(s"  Changes: ${stats.changes}")
+    println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
+    println(s"  Authors:")
+    stats.authors.foreach {
+      case (author, authorStats) =>
+        println(s"    $author: ${(authorStats.score * 100).toInt}%")
+    }
+    println("")
   }
+
+  /** When all the data is available, calculate the scores */
+  private def calculateScore(data: Map[RepoPath, StatsEntry]): Seq[StatsEntry] =
+    data
+      .values
+      .map { entry =>
+        val allChanges = entry.changes.added + entry.changes.removed
+        val authorsScores = entry.authors.map {
+          case (author, stats) =>
+            val userScore = (stats.changes.added + stats.changes.removed).toDouble / allChanges.toDouble
+            author -> stats.copy(score = userScore)
+        }
+
+        entry.copy(authors = authorsScores)
+      }
+      .toSeq
 
   /** Discovers all log entries in a GIT repo */
   private def getLogEntries(): Task[Seq[GitLogEntry]] =

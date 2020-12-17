@@ -22,11 +22,9 @@ object ElasticUtils {
     Task
       .deferFutureAction { implicit s =>
         qEsClient.ec.execute {
-          val request = search(index).query {
+          search(index).query {
             boolQuery().should(directories.map(x => matchQuery("path", x)))
           }
-          println(s"REQUEST: ${request.show}")
-          request
         }
       }.flatMap(interpretResponse(x => x))
 
