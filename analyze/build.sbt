@@ -13,6 +13,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "com.madgag.scala-git"   %% "scala-git"               % "4.3",
       "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % "7.9.2",
+      "org.eclipse.jgit"        % "org.eclipse.jgit"        % "5.10.0.202012080955-r",
       "org.scalatest"          %% "scalatest"               % "3.2.2" % Test,
       "org.typelevel"          %% "cats-core"               % "2.3.0",
       "org.typelevel"          %% "cats-effect"             % "2.3.0",

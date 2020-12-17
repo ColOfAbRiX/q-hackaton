@@ -3,6 +3,10 @@ import data
 
 app = Flask("Hackaton")
 
+@app.route('/')
+def send_root():
+    return send_html('index.html')
+
 @app.route('/css/<path:path>')
 def send_css(path):
     return send_from_directory('../frontend/css', path)
