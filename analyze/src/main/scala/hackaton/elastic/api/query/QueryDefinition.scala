@@ -12,11 +12,13 @@ case class BooleanQuert(
     minimumShouldMatch: Option[String] = None,
 ) extends QueryDefinition
 
-case class BooleanQuery(minimumShouldMatch: Option[String] = None,
-                        filters: Seq[Query] = Nil,
-                        must: Seq[Query] = Nil,
-                        not: Seq[Query] = Nil,
-                        should: Seq[Query] = Nil ) extends QueryDefinition
+case class BooleanQuery(
+    minimumShouldMatch: Option[String] = None,
+    filters: Seq[Query] = Nil,
+    must: Seq[Query] = Nil,
+    not: Seq[Query] = Nil,
+    should: Seq[Query] = Nil,
+) extends QueryDefinition
 
 /*
 BoolQuery(adjustPureNegative: Option[Boolean] = None,

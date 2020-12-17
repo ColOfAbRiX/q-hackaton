@@ -1,9 +1,11 @@
 package hackaton
 
-import com.sksamuel.elastic4s._
 import com.sksamuel.elastic4s.ElasticDsl._
+import com.sksamuel.elastic4s._
+import com.sksamuel.elastic4s.requests.bulk.BulkRequest
+import com.sksamuel.elastic4s.requests.indexes.IndexRequest
 import hackaton.elastic.QElasticClient
-import hackaton.elastic.api.request.{CreateIndexRequest, IndicesExistsRequest}
+import hackaton.elastic.api.request.{ CreateIndexRequest, IndicesExistsRequest }
 import monix.eval.Task
 
 object ElasticUtils {
@@ -39,15 +41,23 @@ object ElasticUtils {
         }
       }.flatMap(interpretResponse(x => x))
 
-  def insertDoc(index: String, doc: StatsEntry): Task[Unit] = {
+  def insertDoc(index: String, docs: Seq[StatsEntry]): Task[Unit] = {
     Task
       .deferFutureAction { implicit s =>
         qEsClient.ec.execute {
-          val request = update(doc.path.name).in(index).doc {
-            ""
-          }
-          println(s"Upsert: ${request.show}")
-          request
+          BulkRequest(
+            docs.map(x =>
+              IndexRequest(
+                index = index,
+                id = Option(x.path.name),
+                fields = Seq(
+                  SimpleFieldValue("path", x.path.name),
+                  SimpleFieldValue("directSubdirs", x.children.map(_.name)),
+                  SimpleFieldValue("authors", x.authors.map(as => as._1 -> as._2.score)),
+                ),
+              ),
+            ),
+          )
         }
       }.flatMap(interpretResponse(x => x))
   }
@@ -55,6 +65,6 @@ object ElasticUtils {
   private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =
     response match {
       case RequestSuccess(_, _, _, result) => Task(f(result))
-      case RequestFailure(_, _, _, error) => Task.raiseError(error.asException)
+      case RequestFailure(_, _, _, error)  => Task.raiseError(error.asException)
     }
 }

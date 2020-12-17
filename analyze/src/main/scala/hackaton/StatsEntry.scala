@@ -10,7 +10,7 @@ object RepoAuthor {
   def apply(id: String): RepoAuthor = {
     id.split('<').toList match {
       case ::(name, email) => RepoAuthor(name, email.head.reverse.tail.reverse)
-      case Nil => ???
+      case Nil             => ???
     }
   }
 
@@ -37,6 +37,7 @@ final case class AuthorStats(
 
 final case class StatsEntry(
     path: RepoPath,
+    parent: Option[RepoPath] = None,
     children: Set[RepoPath] = Set.empty,
     changes: RepoChanges = RepoChanges(),
     authors: Map[RepoAuthor, AuthorStats] = Map.empty,

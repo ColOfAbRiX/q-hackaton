@@ -1,76 +1,76 @@
 package hackaton
 
-import monix.eval.Task
-import monix.execution.Scheduler.Implicits.global
+import cats.effect.ExitCode
+import hackaton.Utils._
+import monix.eval.{Task, TaskApp}
 
 import java.nio.file._
 import scala.annotation.tailrec
 
-object Main extends App {
+object Main extends TaskApp {
 
   val storage = scala.collection.mutable.Map[RepoPath, StatsEntry]()
-  val targetDirectory = "C:\\Users\\BarnabyMalaj\\.Git\\QuantexaExplorer"
-  val repoIndex = "metals-repo"
+  //  val targetDirectory = "C:\\Users\\BarnabyMalaj\\.Git\\QuantexaExplorer"
 
-  val computation =
-    for {
-      indexPresent <- ElasticUtils.indexExists(repoIndex)
-      _            <- if (!indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
-      _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
-      logEntries <- getLogEntries()
-      _ <- processLogEntries(logEntries)
-    } yield ()
-
-  computation.runSyncUnsafe()
-
-
-  val finalData = calculateScore(storage.toMap)
-
-  finalData.foreach { stats =>
-    println(s"Changes for ${stats.path}:")
-    println(s"  Changes: ${stats.changes}")
-    println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
-    println(s"  Authors:")
-    stats.authors.foreach {
-      case (author, authorStats) =>
-        println(s"    $author: ${(authorStats.score * 100).toInt}%")
+  def run(args: List[String]): Task[ExitCode] =
+    args.headOption match {
+      case Some(targetDirectory) =>
+        val repoIndex = s"repoStats-${targetDirectory.md5}"
+        for {
+          indexPresent <- ElasticUtils.indexExists(repoIndex)
+          _            <- if (!indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
+          _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
+          _            <- Task(println(s"Initialised $repoIndex"))
+          logEntries   <- getLogEntries(targetDirectory)
+          _            <- Task(println(s"Discovered ${logEntries.size} commits"))
+          _            <- processLogEntries(targetDirectory, logEntries)
+          scores       <- calculateScore(storage.toMap)
+          _            <- Task(println(s"Calculated ${scores.size} scores"))
+          _ <- Task.parSequenceN(8)(
+                 scores
+                   .grouped(25).toVector
+                   .map(batch => ElasticUtils.insertDoc(repoIndex, batch)),
+               )
+          _ <- Task(println(s"Data inserted into ElasticSearch"))
+        } yield ExitCode.Success
+      case None =>
+        Task(System.err.println("Usage: MyApp name")).as(ExitCode(2))
     }
-    println("")
-  }
 
   /** When all the data is available, calculate the scores */
-  private def calculateScore(data: Map[RepoPath, StatsEntry]): Seq[StatsEntry] =
+  private def calculateScore(data: Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
     data
       .values
       .map { entry =>
         val allChanges = entry.changes.added + entry.changes.removed
         val authorsScores = entry.authors.map {
           case (author, stats) =>
-            val userScore = (stats.changes.added + stats.changes.removed).toDouble / allChanges.toDouble
+            val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
             author -> stats.copy(score = userScore)
         }
 
         entry.copy(authors = authorsScores)
       }
       .toSeq
+  }
 
   /** Discovers all log entries in a GIT repo */
-  private def getLogEntries(): Task[Seq[GitLogEntry]] =
+  private def getLogEntries(targetDirectory: String): Task[Seq[GitLogEntry]] =
     Utils
-      .run(List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
+      .run(targetDirectory, List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
       .map {
         _.map(GitLogEntry.fromOutput)
           .sortBy(_.datetime)
-          .take(100) // NOTE: take(25) is just to have less data to test
+          .take(1000) // NOTE: take(25) is just to have less data to test
       }
 
   /** Gets differences between each pair of commits */
-  private def processLogEntries(logEntries: Seq[GitLogEntry]): Task[Unit] = {
+  private def processLogEntries(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
     val result = logEntries
       .sliding(2)
       .toVector
       .map { logs =>
-        val diffs = interpretCommits(logs(1), logs(0))
+        val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
         diffs.flatMap(processDiffs(logs(1), _))
       }
 
@@ -78,9 +78,13 @@ object Main extends App {
   }
 
   /** Given two commits it discovers the differences */
-  private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
+  private def interpretCommits(
+      targetDirectory: String,
+      current: GitLogEntry,
+      previous: GitLogEntry,
+  ): Task[Vector[GitDiffFile]] =
     Utils
-      .run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
+      .run(targetDirectory, List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
       .map {
         _.filter(!_.contains("=>"))
           .flatMap(GitDiffFile.fromOutput)
@@ -98,7 +102,7 @@ object Main extends App {
         }
         .map {
           case (path, diffs) =>
-            val added = diffs.map(_.added).sum
+            val added   = diffs.map(_.added).sum
             val removed = diffs.map(_.removed).sum
             path -> RepoChanges(added, removed, added - removed)
         }
