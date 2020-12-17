@@ -1,9 +1,9 @@
 package hackaton
 
-import sys.process._
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 import java.nio.file._
+import scala.annotation.tailrec
 
 object Main extends App {
 
@@ -13,21 +13,35 @@ object Main extends App {
 
   val computation =
     for {
-      indexPresent <- ElasticUtils.indexExists(repoIndex)
-      _            <- if (!indexPresent) ElasticUtils.indexCreate("metals-repo") else Task.unit
-      logEntries   <- getLogEntries()
-      _            <- processLogEntries(logEntries)
+      //indexPresent <- ElasticUtils.indexExists(repoIndex)
+      //_            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
+      logEntries <- getLogEntries()
+      _          <- processLogEntries(logEntries)
     } yield ()
 
   computation.runSyncUnsafe()
 
+  storage.foreach {
+    case (path, stats) =>
+      println(s"Changes for $path:")
+      println(s"  Changes: ${stats.changes}")
+      println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
+      println(s"  Authors:")
+      stats.authors.foreach {
+        case (author, authorStats) =>
+          println(s"    $author: $authorStats")
+      }
+      println("")
+  }
+
   /** Discovers all log entries in a GIT repo */
   private def getLogEntries(): Task[Seq[GitLogEntry]] =
-    run(List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
+    Utils
+      .run(List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
       .map {
         _.map(GitLogEntry.fromOutput)
           .sortBy(_.datetime)
-        //.take(25) // NOTE: take(25) is just to have less data to test
+          .take(10) // NOTE: take(25) is just to have less data to test
       }
 
   /** Gets differences between each pair of commits */
@@ -39,16 +53,18 @@ object Main extends App {
         val diffs = interpretCommits(logs(1), logs(0))
         diffs.flatMap(processDiffs(logs(1), _))
       }
-    Task.sequence(result).map(_ => ())
+
+    Task.sequence(result) *> Task.unit
   }
 
   /** Given  two commits it discovers the differences */
   private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
-    run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
+    Utils
+      .run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
       .map(_.flatMap(GitDiffFile.fromOutput).toVector)
 
   /** Processes the differences between two commits */
-  private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = {
+  private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = Task {
     val affectedDirectories =
       diffs
         .groupBy { gitDiff =>
@@ -64,53 +80,34 @@ object Main extends App {
         }
 
     for ((dir, changes) <- affectedDirectories) {
-      val statsEntry  = storage.getOrElse(dir, StatsEntry(dir))
-      val authorStats = statsEntry.authors.getOrElse(commit.author, AuthorStats())
-
-      val newPathChanges = statsEntry.changes + changes
+      val statsEntry     = storage.getOrElseUpdate(dir, StatsEntry(dir))
+      val authorStats    = statsEntry.authors.getOrElse(commit.author, AuthorStats())
       val newAuthorStats = authorStats.copy(authorStats.changes + changes)
 
-      val newAuthors = statsEntry.authors + (commit.author -> newAuthorStats)
       val newStatsEntry = statsEntry.copy(
-        authors = newAuthors,
-        changes = newPathChanges,
+        authors = statsEntry.authors + (commit.author -> newAuthorStats),
+        changes = statsEntry.changes + changes,
       )
 
-      storage += (dir -> newStatsEntry)
+      updateMyParent(dir)
+      storage.update(dir, newStatsEntry)
     }
-
-    storage.values.toVector.sortBy(_.path.name).map(_.path.name).foreach(println)
-
-    //storage.foreach {
-    //  case (path, stats) =>
-    //    println(s"Changes for $path:")
-    //    println(s"  Changes: ${stats.changes}")
-    //    println(s"  Authors:")
-    //    stats.authors.foreach {
-    //      case (author, authorStats) =>
-    //        println(s"    $author: $authorStats")
-    //    }
-    //    println("")
-    //}
-
-    //println(storage)
-    Task.unit
   }
 
-  //private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = {
-  //  val affectedDirectories =
-  //    diffs.map { path =>
-  //      Paths.get(path.file.name).getParent.toString
-  //    }.distinct
-  //
-  //  ElasticUtils
-  //    .searchDirectories(repoIndex, affectedDirectories)
-  //    .map(println)
-  //}
+  @tailrec
+  private def updateMyParent(child: RepoPath): Unit = {
+    val maybeParent =
+      Option(Paths.get(child.name).getParent)
+        .map(x => RepoPath(x.toString))
 
-  /** Executes a shell command on the targetDirectory */
-  private def run(command: List[String]): Task[Seq[String]] = Task {
-    Process(command, new java.io.File(targetDirectory)).lazyLines
+    maybeParent match {
+      case None => ()
+      case Some(parent) =>
+        val parentStat = storage.getOrElseUpdate(parent, StatsEntry(parent))
+        storage.update(parent, parentStat.copy(children = parentStat.children + child))
+
+        updateMyParent(parent)
+    }
   }
 
 }
