@@ -1,7 +1,7 @@
 package hackaton
 
 import sys.process._
-import hackaton.elastic.QElasticClient
+import hackaton.elastic.api.query._
 import hackaton.elastic.api.request.SearchRequest
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
@@ -53,12 +53,25 @@ object Main extends App {
     updateRepo(diffs)
 
   private def updateUser(user: String, diffs: Vector[GitDiffFile]): Task[Unit] = {
-    ???
-    //ElasticUtils.esClient.searchAndReturnAsCC(SearchRequest(repoIndex, ))
+    val affectedDirectories =
+      diffs
+        .map(_.file.name.replaceAll("""/[^/\\]+$""", ""))
+        .distinct
+        .filter(_.nonEmpty)
+
+    val query   = BooleanQuery(should = affectedDirectories.map(x => MatchQuery("path", x)))
+    val request = SearchRequest(indexes = Seq(repoIndex), query = Some(query))
+
+    Task(println(s"EXECUTING QUERY: $request")) *>
+    ElasticUtils
+      .esClient
+      .search(request)
+      .map(println)
   }
 
   private def updateRepo(diffs: Vector[GitDiffFile]): Task[Unit] = {
-    ???
+    println("EMPTY FOR NOW")
+    Task.unit
   }
 
   /** Executes a shell command on the targetDirectory */

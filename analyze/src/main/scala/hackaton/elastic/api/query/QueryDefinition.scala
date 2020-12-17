@@ -3,12 +3,12 @@ package hackaton.elastic.api.query
 sealed trait QueryDefinition
 
 case class BooleanQuery(
-    filters: List[QueryDefinition],
-    must: List[QueryDefinition],
-    not: List[QueryDefinition],
-    should: List[QueryDefinition],
+    filters: Seq[QueryDefinition] = Seq.empty,
+    must: Seq[QueryDefinition] = Seq.empty,
+    not: Seq[QueryDefinition] = Seq.empty,
+    should: Seq[QueryDefinition] = Seq.empty,
     minimumShouldMatch: Option[String] = None,
-)
+) extends QueryDefinition
 
 case class ExistsQuery(field: String) extends QueryDefinition
 
