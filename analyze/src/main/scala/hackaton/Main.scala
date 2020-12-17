@@ -1,13 +1,13 @@
 package hackaton
 
 import sys.process._
-import hackaton.elastic.api.query._
-import hackaton.elastic.api.request.SearchRequest
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
+import java.nio.file._
 
 object Main extends App {
 
+  val storage         = scala.collection.mutable.Map[RepoPath, StatsEntry]()
   val targetDirectory = "../../../Desktop/metals"
   val repoIndex       = "metals-repo"
 
@@ -42,37 +42,56 @@ object Main extends App {
     Task.sequence(result).map(_ => ())
   }
 
-  /** Given two commits it discovers the differences */
+  /** Given  two commits it discovers the differences */
   private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
     run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
       .map(_.map(GitDiffFile.fromOutput).toVector)
 
   /** Processes the differences between two commits */
-  private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] =
-    updateUser(commit.author, diffs) *>
-    updateRepo(diffs)
-
-  private def updateUser(user: String, diffs: Vector[GitDiffFile]): Task[Unit] = {
+  private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = {
     val affectedDirectories =
       diffs
-        .map(_.file.name.replaceAll("""/[^/\\]+$""", ""))
-        .distinct
-        .filter(_.nonEmpty)
+        .groupBy { gitDiff =>
+          RepoPath(Paths.get(gitDiff.file.name).getParent.toString)
+        }
+        .map {
+          case (path, diffs) =>
+            val added   = diffs.map(_.added).sum
+            val removed = diffs.map(_.removed).sum
+            path -> RepoChanges(added, removed, added - removed)
+        }
 
-    val query   = BooleanQuery(should = affectedDirectories.map(x => MatchQuery("path", x)))
-    val request = SearchRequest(indexes = Seq(repoIndex), query = Some(query))
+    for ((dir, changes) <- affectedDirectories ) {
+      val statsEntry  = storage.getOrElse(dir, StatsEntry(dir))
+      val authorStats = statsEntry.authors.getOrElse(commit.author, AuthorStats())
 
-    Task(println(s"EXECUTING QUERY: $request")) *>
-    ElasticUtils
-      .esClient
-      .search(request)
-      .map(println)
-  }
+      val newPathChanges = statsEntry.changes + changes
+      val newAuthorStats = authorStats.changes + changes
+      val newAuthors = statsEntry.authors + (commit.author -> newAuthorStats)
 
-  private def updateRepo(diffs: Vector[GitDiffFile]): Task[Unit] = {
-    println("EMPTY FOR NOW")
+      val newStatsEntry = statsEntry.copy(
+        authors = newAuthors,
+        changes = newPathChanges,
+      )
+
+      println(s"statsEntry: $statsEntry -> $newStatsEntry")
+      println("")
+    }
+
+    //println(storage)
     Task.unit
   }
+
+  //private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = {
+  //  val affectedDirectories =
+  //    diffs.map { path =>
+  //      Paths.get(path.file.name).getParent.toString
+  //    }.distinct
+  //
+  //  ElasticUtils
+  //    .searchDirectories(repoIndex, affectedDirectories)
+  //    .map(println)
+  //}
 
   /** Executes a shell command on the targetDirectory */
   private def run(command: List[String]): Task[Seq[String]] = Task {
