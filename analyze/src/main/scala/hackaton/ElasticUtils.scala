@@ -53,8 +53,10 @@ object ElasticUtils {
                 fields = Seq(
                   SimpleFieldValue("path", x.path.name),
                   SimpleFieldValue("directSubdirs", x.children.map(_.name).toList),
-                  // parent is not a list, need to change output
-                  SimpleFieldValue("parent", x.parent.getOrElse("none")),
+                  SimpleFieldValue("parent", x.parent match {
+                    case Some(value) => value.name
+                    case None => "none"
+                  }),
                   SimpleFieldValue("authors", x.authors.map(as => as._1.show -> as._2.score)),
                 ),
               ),
