@@ -27,7 +27,7 @@ object Main extends App {
       .map {
         _.map(GitLogEntry.fromOutput)
           .sortBy(_.datetime)
-          .take(25) // NOTE: take(25) is just to have less data to test
+        //.take(25) // NOTE: take(25) is just to have less data to test
       }
 
   /** Gets differences between each pair of commits */
@@ -45,14 +45,16 @@ object Main extends App {
   /** Given  two commits it discovers the differences */
   private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
     run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
-      .map(_.map(GitDiffFile.fromOutput).toVector)
+      .map(_.flatMap(GitDiffFile.fromOutput).toVector)
 
   /** Processes the differences between two commits */
   private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = {
     val affectedDirectories =
       diffs
         .groupBy { gitDiff =>
-          RepoPath(Paths.get(gitDiff.file.name).getParent.toString)
+          Option(Paths.get(gitDiff.file.name).getParent)
+            .map(x => RepoPath(x.toString))
+            .getOrElse(RepoPath(""))
         }
         .map {
           case (path, diffs) =>
@@ -61,22 +63,35 @@ object Main extends App {
             path -> RepoChanges(added, removed, added - removed)
         }
 
-    for ((dir, changes) <- affectedDirectories ) {
+    for ((dir, changes) <- affectedDirectories) {
       val statsEntry  = storage.getOrElse(dir, StatsEntry(dir))
       val authorStats = statsEntry.authors.getOrElse(commit.author, AuthorStats())
 
       val newPathChanges = statsEntry.changes + changes
-      val newAuthorStats = authorStats.changes + changes
-      val newAuthors = statsEntry.authors + (commit.author -> newAuthorStats)
+      val newAuthorStats = authorStats.copy(authorStats.changes + changes)
 
+      val newAuthors = statsEntry.authors + (commit.author -> newAuthorStats)
       val newStatsEntry = statsEntry.copy(
         authors = newAuthors,
         changes = newPathChanges,
       )
 
-      println(s"statsEntry: $statsEntry -> $newStatsEntry")
-      println("")
+      storage += (dir -> newStatsEntry)
     }
+
+    storage.values.toVector.sortBy(_.path.name).map(_.path.name).foreach(println)
+
+    //storage.foreach {
+    //  case (path, stats) =>
+    //    println(s"Changes for $path:")
+    //    println(s"  Changes: ${stats.changes}")
+    //    println(s"  Authors:")
+    //    stats.authors.foreach {
+    //      case (author, authorStats) =>
+    //        println(s"    $author: $authorStats")
+    //    }
+    //    println("")
+    //}
 
     //println(storage)
     Task.unit
