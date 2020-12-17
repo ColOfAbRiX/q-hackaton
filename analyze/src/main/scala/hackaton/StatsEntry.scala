@@ -16,7 +16,10 @@ final case class RepoChanges(
   )
 }
 
-final case class AuthorStats(changes: RepoChanges = RepoChanges())
+final case class AuthorStats(
+    changes: RepoChanges = RepoChanges(),
+    score: Int = 0,
+)
 
 final case class StatsEntry(
     path: RepoPath,
