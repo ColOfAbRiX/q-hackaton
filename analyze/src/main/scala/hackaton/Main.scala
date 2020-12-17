@@ -23,18 +23,36 @@ object Main extends App {
 
   computation.runSyncUnsafe()
 
-  storage.foreach {
-    case (path, stats) =>
-      println(s"Changes for $path:")
-      println(s"  Changes: ${stats.changes.show}")
-      println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
-      println(s"  Authors:")
-      stats.authors.foreach {
-        case (author, authorStats) =>
-          println(s"    ${author.show}: ${authorStats.changes.show}")
-      }
-      println("")
+
+  val finalData = calculateScore(storage.toMap)
+
+  finalData.foreach { stats =>
+    println(s"Changes for ${stats.path}:")
+    println(s"  Changes: ${stats.changes}")
+    println(s"  Children: ${stats.children.map(_.name).mkString(", ")}")
+    println(s"  Authors:")
+    stats.authors.foreach {
+      case (author, authorStats) =>
+        println(s"    $author: ${(authorStats.score * 100).toInt}%")
+    }
+    println("")
   }
+
+  /** When all the data is available, calculate the scores */
+  private def calculateScore(data: Map[RepoPath, StatsEntry]): Seq[StatsEntry] =
+    data
+      .values
+      .map { entry =>
+        val allChanges = entry.changes.added + entry.changes.removed
+        val authorsScores = entry.authors.map {
+          case (author, stats) =>
+            val userScore = (stats.changes.added + stats.changes.removed).toDouble / allChanges.toDouble
+            author -> stats.copy(score = userScore)
+        }
+
+        entry.copy(authors = authorsScores)
+      }
+      .toSeq
 
   /** Discovers all log entries in a GIT repo */
   private def getLogEntries(): Task[Seq[GitLogEntry]] =
@@ -43,7 +61,7 @@ object Main extends App {
       .map {
         _.map(GitLogEntry.fromOutput)
           .sortBy(_.datetime)
-          .take(10) // NOTE: take(25) is just to have less data to test
+          .take(100) // NOTE: take(25) is just to have less data to test
       }
 
   /** Gets differences between each pair of commits */
@@ -63,7 +81,11 @@ object Main extends App {
   private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Task[Vector[GitDiffFile]] =
     Utils
       .run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
-      .map(_.flatMap(GitDiffFile.fromOutput).toVector)
+      .map {
+        _.filter(!_.contains("=>"))
+          .flatMap(GitDiffFile.fromOutput)
+          .toVector
+      }
 
   /** Processes the differences between two commits */
   private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Task[Unit] = Task {
@@ -82,31 +104,39 @@ object Main extends App {
         }
 
     for ((dir, changes) <- affectedDirectories) {
-      val statsEntry = storage.getOrElseUpdate(dir, StatsEntry(dir))
-      val authorStats = statsEntry.authors.getOrElse(commit.author, AuthorStats())
-      val newAuthorStats = authorStats.copy(authorStats.changes + changes)
 
-      val newStatsEntry = statsEntry.copy(
-        authors = statsEntry.authors + (commit.author -> newAuthorStats),
-        changes = statsEntry.changes + changes,
-      )
+      val statsEntry    = storage.getOrElseUpdate(dir, StatsEntry(dir))
+      val newStatsEntry = applyChanges(statsEntry, commit.author, changes)
 
-      updateMyParent(dir)
       storage.update(dir, newStatsEntry)
+      updateMyParent(newStatsEntry, commit.author, changes)
     }
   }
 
   @tailrec
-  private def updateMyParent(child: RepoPath): Unit = {
-    // this doesn't work - we'd need to map each part individually
-    Option(Paths.get(child.name).getParent)
-      .map(x => RepoPath(x.toString)) match {
+  private def updateMyParent(child: StatsEntry, author: RepoAuthor, changes: RepoChanges): Unit = {
+    val maybeParent =
+      Option(Paths.get(child.path.name).getParent)
+        .map(x => RepoPath(x.toString))
+
+    maybeParent match {
       case None => ()
       case Some(parent) =>
-        val parentStat = storage.getOrElseUpdate(parent, StatsEntry(parent))
-        storage.update(parent, parentStat.copy(children = parentStat.children + child))
-        updateMyParent(parent)
+        val parentStat     = storage.getOrElseUpdate(parent, StatsEntry(parent))
+        val newParentStats = applyChanges(parentStat, author, changes).copy(children = parentStat.children + child.path)
+
+        storage.update(parent, newParentStats)
+        updateMyParent(parentStat, author, changes)
     }
   }
 
+  /** Updates an entry with new statistics */
+  private def applyChanges(entry: StatsEntry, author: RepoAuthor, changes: RepoChanges): StatsEntry = {
+    val authorStats    = entry.authors.getOrElse(author, AuthorStats())
+    val newAuthorStats = authorStats.copy(authorStats.changes + changes)
+    entry.copy(
+      authors = entry.authors + (author -> newAuthorStats),
+      changes = entry.changes + changes,
+    )
+  }
 }

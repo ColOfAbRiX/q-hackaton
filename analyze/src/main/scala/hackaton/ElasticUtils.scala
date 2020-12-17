@@ -25,35 +25,36 @@ object ElasticUtils {
           deleteIndex(indexName)
         }
       }.flatMap(interpretResponse(x => ()))
-
-    def searchDirectories(index: String, directories: Vector[String]): Task[Unit] =
-      Task
-        .deferFutureAction { implicit s =>
-          qEsClient.ec.execute {
-            val request = search(index).query {
-              boolQuery().should(directories.map(x => matchQuery("path", x)))
-            }
-            println(s"REQUEST: ${request.show}")
-            request
-          }
-        }.flatMap(interpretResponse(x => x))
-
-    def insertDoc(index: String, doc: StatsEntry): Task[Unit] = {
-      Task
-        .deferFutureAction { implicit s =>
-          qEsClient.ec.execute {
-            val request = update(doc.path.name).in(index).doc {
-              ""
-            }
-            println(s"Upsert: ${request.show}")
-            request
-          }
-        }.flatMap(interpretResponse(x => x))
-    }
-
-    private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =
-      response match {
-        case RequestSuccess(_, _, _, result) => Task(f(result))
-        case RequestFailure(_, _, _, error) => Task.raiseError(error.asException)
-      }
   }
+
+  def searchDirectories(index: String, directories: Vector[String]): Task[Unit] =
+    Task
+      .deferFutureAction { implicit s =>
+        qEsClient.ec.execute {
+          val request = search(index).query {
+            boolQuery().should(directories.map(x => matchQuery("path", x)))
+          }
+          println(s"REQUEST: ${request.show}")
+          request
+        }
+      }.flatMap(interpretResponse(x => x))
+
+  def insertDoc(index: String, doc: StatsEntry): Task[Unit] = {
+    Task
+      .deferFutureAction { implicit s =>
+        qEsClient.ec.execute {
+          val request = update(doc.path.name).in(index).doc {
+            ""
+          }
+          println(s"Upsert: ${request.show}")
+          request
+        }
+      }.flatMap(interpretResponse(x => x))
+  }
+
+  private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =
+    response match {
+      case RequestSuccess(_, _, _, result) => Task(f(result))
+      case RequestFailure(_, _, _, error) => Task.raiseError(error.asException)
+    }
+}

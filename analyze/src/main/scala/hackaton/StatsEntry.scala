@@ -30,7 +30,10 @@ final case class RepoChanges(
   def show: String = s"+$added -$removed ${added - removed}"
 }
 
-final case class AuthorStats(changes: RepoChanges = RepoChanges())
+final case class AuthorStats(
+    changes: RepoChanges = RepoChanges(),
+    score: Double = 0,
+)
 
 final case class StatsEntry(
     path: RepoPath,
