@@ -2,7 +2,7 @@ package hackaton.elastic
 
 import hackaton.elastic.api.request._
 import hackaton.elastic.api.response._
-import hackaton.elastic.api.settings.ConfigSettings
+import hackaton.elastic.api.settings.{ ConfigSettings, DefaultSettings }
 import hackaton.elastic.internals.parser.{ RequestParser, ResponseParser }
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s.Executor._
@@ -16,34 +16,10 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 import com.sksamuel.elastic4s.http.JavaClient
 
-case class Client(config: ConfigSettings, scheduler: Scheduler = Scheduler.io()) {
-
-  //import com.sksamuel.elastic4s.embedded.{InternalLocalNode, LocalNode}
-  //import com.sun.scenario.Settings
-  //import com.google.common.io.Files
-  //private def dir: File = Files.createTempDir()
-  //private def absPath: String = dir.getAbsolutePath
-  //
-  //private lazy val node: InternalLocalNode = {
-  //  System.setProperty("es.set.netty.runtime.available.processors", "false")
-  //  LocalNode(
-  //    Settings
-  //      .builder()
-  //      .put("cluster.name", "HaqathonElasticClient")
-  //      .put("path.home", s"$absPath/elasticsearch-home")
-  //      .put("path.data", s"$absPath/elasticsearch-data")
-  //      .put("path.repo", s"$absPath/elasticsearch-repo")
-  //      .put("http.port", config.getEsPort)
-  //      .put("node.name", "test-node")
-  //      .put("discovery.type", "single-node")
-  //      .build(),
-  //  )
-  //}
-  //
-  //private val ec: ElasticClient = ElasticClient(node.client(shutdownNodeOnClose = true).client)
+case class QElasticClient(config: ConfigSettings = DefaultSettings, scheduler: Scheduler = Scheduler.io()) {
 
   val ec: ElasticClient = {
-    ElasticClient(JavaClient(ElasticProperties("http://localhost:9200")))
+    ElasticClient(JavaClient(ElasticProperties(s"http://${config.getEsHost}:${config.getEsPort}")))
   }
 
   def createIndex(createIndexRequest: CreateIndexRequest): Task[CreateIndexResponse] =

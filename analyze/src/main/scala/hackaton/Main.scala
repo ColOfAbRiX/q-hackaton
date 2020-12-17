@@ -1,16 +1,19 @@
 package hackaton
 
 import sys.process._
+import hackaton.elastic.QElasticClient
+import hackaton.elastic.api.request.SearchRequest
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 
 object Main extends App {
 
   val targetDirectory = "../../../Desktop/metals"
+  val repoIndex       = "metals-repo"
 
   val computation =
     for {
-      indexPresent <- ElasticUtils.indexExists("metals-repo")
+      indexPresent <- ElasticUtils.indexExists(repoIndex)
       _            <- if (!indexPresent) ElasticUtils.indexCreate("metals-repo") else Task.unit
       logEntries   <- getLogEntries()
       _            <- processLogEntries(logEntries)
@@ -51,6 +54,7 @@ object Main extends App {
 
   private def updateUser(user: String, diffs: Vector[GitDiffFile]): Task[Unit] = {
     ???
+    //ElasticUtils.esClient.searchAndReturnAsCC(SearchRequest(repoIndex, ))
   }
 
   private def updateRepo(diffs: Vector[GitDiffFile]): Task[Unit] = {

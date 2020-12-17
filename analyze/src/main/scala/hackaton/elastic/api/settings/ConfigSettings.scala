@@ -4,9 +4,7 @@ import java.net.ServerSocket
 
 sealed trait ConfigSettings {
   def getEsPort: Int
-
-  def getSparkPort: Int
-
+  def getEsHost: String
   def getAvailablePort: Int = {
     val dynamicServerPort = new ServerSocket(0)
     dynamicServerPort.setReuseAddress(true)
@@ -17,21 +15,11 @@ sealed trait ConfigSettings {
 }
 
 object DefaultSettings extends ConfigSettings {
-  private val esPort    = getAvailablePort
-  private val sparkPort = getAvailablePort
-
-  override def getEsPort: Int = esPort
-
-  override def getSparkPort: Int = sparkPort
+  def getEsHost: String = "localhost"
+  def getEsPort: Int    = 9200
 }
 
-case class SimpleSettings(
-    esPort: Int,
-    sparkPort: Int,
-    sparkAppName: String,
-    additionalSparkLoaderSettings: Map[String, Any] = Map.empty,
-) extends ConfigSettings {
-
-  override def getEsPort: Int    = esPort
-  override def getSparkPort: Int = sparkPort
+case class SimpleSettings(host: String, esPort: Int) extends ConfigSettings {
+  def getEsHost: String = host
+  def getEsPort: Int    = esPort
 }
