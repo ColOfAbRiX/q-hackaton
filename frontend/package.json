@@ -2,7 +2,7 @@
   "name": "hackaton",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "directories": {
     "lib": "lib"
   },
@@ -16,8 +16,7 @@
     "webpack-cli": "^4.2.0"
   },
   "scripts": {
-    "build": "tsc --build && webpack --config webpack.config.js",
-    "clean": "tsc --build --clean",
+    "build": "webpack",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

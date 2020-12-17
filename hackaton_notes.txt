@@ -81,9 +81,5 @@ Elastic format
     "path": "explorer-task/task-service/src/main/scala/com/quantexa/explorer/tasks/persistence/elastic/model/task",
     "parent": "explorer-task/task-service/src/main/scala/com/quantexa/explorer/tasks/persistence/elastic/model"
     "directSubdirs": [],
-    "totalLines": 123121,
-    "authors": {
-        "fabrizio_changed_line": 1133
-    }
     ...
 }
