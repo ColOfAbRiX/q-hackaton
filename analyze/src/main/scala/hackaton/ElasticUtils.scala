@@ -15,18 +15,19 @@ object ElasticUtils {
     Task
       .deferFutureAction { implicit s =>
         client.execute(getIndex(Seq(index)))
-      }.flatMap {
-      case RequestSuccess(_, _, _, result) => Task(result.contains(index))
-      case RequestFailure(_, _, _, error)  => Task.raiseError(error.asException)
-    }
+      }
+      .flatMap(interpretResponse(_.contains(index)))
 
   def indexCreate(index: String): Task[Unit] =
     Task
       .deferFutureAction { implicit s =>
         client.execute(createIndex(index))
-      }.flatMap {
-        case RequestSuccess(_, _, _, _) => Task(())
-        case RequestFailure(_, _, _, error)  => Task.raiseError(error.asException)
       }
+      .flatMap(interpretResponse(_ => ()))
 
+  private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =
+    response match {
+      case RequestSuccess(_, _, _, result) => Task(f(result))
+      case RequestFailure(_, _, _, error)  => Task.raiseError(error.asException)
+    }
 }

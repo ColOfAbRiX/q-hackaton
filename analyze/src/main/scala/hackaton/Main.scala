@@ -10,9 +10,10 @@ object Main extends App {
 
   val computation =
     for {
-      _          <- ElasticUtils.indexCreate("metals-repo")
-      logEntries <- getLogEntries()
-      _          <- processLogEntries(logEntries)
+      indexPresent <- ElasticUtils.indexExists("metals-repo")
+      _            <- if (!indexPresent) ElasticUtils.indexCreate("metals-repo") else Task.unit
+      logEntries   <- getLogEntries()
+      _            <- processLogEntries(logEntries)
     } yield ()
 
   computation.runSyncUnsafe()
@@ -56,6 +57,7 @@ object Main extends App {
     ???
   }
 
+  /** Executes a shell command on the targetDirectory */
   private def run(command: List[String]): Task[Seq[String]] = Task {
     Process(command, new java.io.File(targetDirectory)).lazyLines
   }
