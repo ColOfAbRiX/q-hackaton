@@ -4,30 +4,38 @@ import sys.process._
 
 object Main extends App {
 
-  // 1. Read all commits (with time limit)
-  // 2. Find the changed lines and the author
-  // 3. Checkout a commit
-
   val targetDirectory = "../../../Desktop/metals"
 
-  val gitlogCommand = List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat)
-  val logEntries    = run(gitlogCommand).map(GitLogEntry.fromGitLog).take(10)
+  val logEntries =
+    run(List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
+      .map(GitLogEntry.fromOutput)
+      .sortBy(_.datetime)
+      .take(25) // NOTE: take(25) is just to have less data to test
 
-  logEntries
-    .sliding(2)
-    .filter(_.size == 2)
-    .foreach { compareCommits =>
-      val current        = compareCommits(1)
-      val previous       = compareCommits(0)
-      val gitdiffCommand = List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}")
-      val diff           = run(gitdiffCommand)
+  val commitDiffs =
+    logEntries
+      .sliding(2)
+      .map(logs => processDiffs(logs(1), interpretCommits(logs(1), logs(0))))
 
-      println(s"DIFFS of ${previous.commitRev}..${current.commitRev}")
-      println(diff)
-      println("")
-    }
+  private def processDiffs(commit: GitLogEntry, diffs: Vector[GitDiffFile]): Unit = {
+    updateUser(commit.author, diffs)
+    updateRepo(diffs)
+  }
 
-  private def run(command: List[String]): List[String] =
-    Process(command, new java.io.File(targetDirectory)).lazyLines.toList
+  private def updateUser(user: String, diffs: Vector[GitDiffFile]): Unit = {
+    ???
+  }
+
+  private def updateRepo(diffs: Vector[GitDiffFile]): Unit = {
+    ???
+  }
+
+  private def interpretCommits(current: GitLogEntry, previous: GitLogEntry): Vector[GitDiffFile] =
+    run(List("git", "diff", "--numstat", s"${previous.commitRev}..${current.commitRev}"))
+      .map(GitDiffFile.fromOutput)
+      .toVector
+
+  private def run(command: List[String]): LazyList[String] =
+    Process(command, new java.io.File(targetDirectory)).lazyLines
 
 }

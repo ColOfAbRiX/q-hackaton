@@ -8,7 +8,7 @@ final case class GitLogEntry(commitRev: String, author: String, datetime: LocalD
 object GitLogEntry {
   val gitFormat = "%H : %an<%aE> : %aI"
 
-  def fromGitLog(line: String): GitLogEntry = {
+  def fromOutput(line: String): GitLogEntry = {
     val split = line.split(" : ").toList
     GitLogEntry(
       commitRev = split(0),
@@ -16,5 +16,4 @@ object GitLogEntry {
       datetime = LocalDateTime.parse(split(2), DateTimeFormatter.ISO_OFFSET_DATE_TIME),
     )
   }
-
 }
