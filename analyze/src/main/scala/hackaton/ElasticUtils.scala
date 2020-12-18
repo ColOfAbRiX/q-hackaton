@@ -2,49 +2,57 @@ package hackaton
 
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s._
+import com.sksamuel.elastic4s.http.JavaClient
 import com.sksamuel.elastic4s.requests.bulk.BulkRequest
 import com.sksamuel.elastic4s.requests.indexes.IndexRequest
-import hackaton.elastic.QElasticClient
-import hackaton.elastic.api.request.{ CreateIndexRequest, IndicesExistsRequest }
 import monix.eval.Task
 
 object ElasticUtils {
 
-  val qEsClient: QElasticClient = QElasticClient()
+  val client: ElasticClient = {
+    ElasticClient(JavaClient(ElasticProperties("http://localhost:9200")))
+  }
 
   def indexExists(index: String): Task[Boolean] =
-    qEsClient.exists(IndicesExistsRequest(Seq(index)))
-
-  def indexCreate(index: String): Task[Unit] =
-    qEsClient
-      .createIndex(CreateIndexRequest(index))
-      .map(_ => ())
-
-  def indexDelete(indexName: String): Task[Unit] = {
     Task
       .deferFutureAction { implicit s =>
-        qEsClient.ec.execute {
-          deleteIndex(indexName)
+        client.execute(getIndex(Seq(index)))
+      }
+      .flatMap(interpretResponse(_.contains(index)))
+
+  def indexCreate(index: String): Task[Unit] =
+    Task
+      .deferFutureAction { implicit s =>
+        client.execute(createIndex(index))
+      }
+      .flatMap(interpretResponse(_ => ()))
+
+  def indexDelete(index: String): Task[Unit] =
+    Task
+      .deferFutureAction { implicit s =>
+        client.execute {
+          deleteIndex(index)
         }
-      }.flatMap(interpretResponse(x => ()))
-  }
+      }
+      .flatMap(interpretResponse(_ => ()))
 
   def searchDirectories(index: String, directories: Vector[String]): Task[Unit] =
     Task
       .deferFutureAction { implicit s =>
-        qEsClient.ec.execute {
+        client.execute {
           val request = search(index).query {
             boolQuery().should(directories.map(x => matchQuery("path", x)))
           }
           println(s"REQUEST: ${request.show}")
           request
         }
-      }.flatMap(interpretResponse(x => x))
+      }
+      .flatMap(interpretResponse(x => x))
 
   def insertDoc(index: String, docs: Seq[StatsEntry]): Task[Unit] = {
     Task
       .deferFutureAction { implicit s =>
-        qEsClient.ec.execute {
+        client.execute {
           BulkRequest(
             docs.map(x =>
               IndexRequest(
@@ -63,7 +71,8 @@ object ElasticUtils {
             ),
           )
         }
-      }.flatMap(interpretResponse(x => x))
+      }
+      .flatMap(interpretResponse(x => x))
   }
 
   private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =

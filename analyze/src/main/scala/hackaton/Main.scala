@@ -2,7 +2,7 @@ package hackaton
 
 import cats.effect.ExitCode
 import hackaton.Utils._
-import monix.eval.{Task, TaskApp}
+import monix.eval.{ Task, TaskApp }
 
 import java.nio.file._
 import scala.annotation.tailrec
@@ -10,33 +10,42 @@ import scala.annotation.tailrec
 object Main extends TaskApp {
 
   val storage = scala.collection.mutable.Map[RepoPath, StatsEntry]()
-  //  val targetDirectory = "C:\\Users\\BarnabyMalaj\\.Git\\QuantexaExplorer"
 
   def run(args: List[String]): Task[ExitCode] =
     args.headOption match {
       case Some(targetDirectory) =>
         val repoIndex = s"repo-stats-${targetDirectory.md5}"
+
         for {
-          indexPresent <- ElasticUtils.indexExists(repoIndex)
-          _            <- if (indexPresent) ElasticUtils.indexDelete(repoIndex) else Task.unit
-          _            <- if (!indexPresent) ElasticUtils.indexCreate(repoIndex) else Task.unit
-          _            <- Task(println(s"Initialised $repoIndex"))
-          logEntries   <- getLogEntries(targetDirectory)
-          _            <- Task(println(s"Discovered ${logEntries.size} commits"))
-          _            <- processLogEntries(targetDirectory, logEntries)
-          scores       <- calculateScore(storage.toMap)
-          _            <- Task(println(s"Calculated ${scores.size} scores"))
-          _ <- Task.parSequenceN(8)(
-                 scores
-                   .grouped(25).toVector
-                   .map(batch => ElasticUtils.insertDoc(repoIndex, batch)),
-               )
-          _ <- Task(println(s"Data inserted into ElasticSearch"))
+          _          <- initElasticIndex(repoIndex)
+          logEntries <- getLogEntries(targetDirectory)
+          _          <- Task(println(s"Discovered ${logEntries.size} commits"))
+          _          <- processLogEntries(targetDirectory, logEntries)
+          scores     <- calculateScore(storage.toMap)
+          _          <- Task(println(s"Calculated scores for ${scores.size} paths"))
+          _          <- batchRequests(scores)(ElasticUtils.insertDoc(repoIndex, _))
+          _          <- Task(println(s"Data inserted into ElasticSearch"))
         } yield ExitCode.Success
+
       case None =>
         Task(System.err.println("Usage: MyApp name")).as(ExitCode(2))
-
     }
+
+  private def initElasticIndex(index: String): Task[Unit] =
+    for {
+      indexPresent <- ElasticUtils.indexExists(index)
+      _            <- if (indexPresent) ElasticUtils.indexDelete(index) else Task.unit
+      _            <- if (!indexPresent) ElasticUtils.indexCreate(index) else Task.unit
+      _            <- Task(println(s"Initialised $index"))
+    } yield ()
+
+  private def batchRequests[A, B](data: Seq[A])(f: Seq[A] => Task[B]): Task[Unit] =
+    Task.parSequenceN(8) {
+      data
+        .grouped(25)
+        .toVector
+        .map(f)
+    } *> Task.unit
 
   /** When all the data is available, calculate the scores */
   private def calculateScore(data: Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
@@ -59,9 +68,7 @@ object Main extends TaskApp {
     Utils
       .run(targetDirectory, List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
       .map {
-        _.map(GitLogEntry.fromOutput)
-          .sortBy(_.datetime)
-          .take(500) // NOTE: take(25) is just to have less data to test
+        _.map(GitLogEntry.fromOutput).sortBy(_.datetime)
       }
 
   /** Gets differences between each pair of commits */
