@@ -20,7 +20,8 @@ object Main extends TaskApp {
           _          <- initElasticIndex(repoIndex)
           logEntries <- getLogEntries(targetDirectory)
           _          <- Task(println(s"Discovered ${logEntries.size} commits"))
-          _          <- processLogEntries(targetDirectory, logEntries)
+          _          <- processLogEntriesParallel(targetDirectory, logEntries)
+          _          <- Task(println(s"Finished processing"))
           scores     <- calculateScore(storage.toMap)
           _          <- Task(println(s"Calculated scores for ${scores.size} paths"))
           _          <- batchRequests(scores)(ElasticUtils.insertDoc(repoIndex, _))
@@ -40,12 +41,25 @@ object Main extends TaskApp {
     } yield ()
 
   private def batchRequests[A, B](data: Seq[A])(f: Seq[A] => Task[B]): Task[Unit] =
-    Task.parSequenceN(8) {
+    Task.parSequence {
       data
         .grouped(25)
         .toVector
         .map(f)
     } *> Task.unit
+
+  /** Gets differences between each pair of commits */
+  private def processLogEntriesParallel(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
+    batchRequests(logEntries)(x => {
+      val result = x.sliding(2)
+        .toVector
+        .map { logs =>
+          val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
+          diffs.flatMap(processDiffs(logs(1), _))
+        }
+      Task.sequence(result) *> Task.unit
+    })
+  }
 
   /** When all the data is available, calculate the scores */
   private def calculateScore(data: Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
