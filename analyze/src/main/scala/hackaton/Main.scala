@@ -2,14 +2,16 @@ package hackaton
 
 import cats.effect.ExitCode
 import hackaton.Utils._
-import monix.eval.{Task, TaskApp}
-
+import monix.eval.{ Task, TaskApp }
 import java.nio.file._
 import scala.annotation.tailrec
+import monix.execution.Scheduler
 
 object Main extends TaskApp {
 
   val storage = scala.collection.mutable.Map[RepoPath, StatsEntry]()
+
+  private val io = Scheduler.io()
 
   def run(args: List[String]): Task[ExitCode] =
     args.headOption match {
@@ -41,28 +43,45 @@ object Main extends TaskApp {
     } yield ()
 
   private def batchRequests[A, B](data: Seq[A])(f: Seq[A] => Task[B]): Task[Unit] =
-    Task.parSequence {
-      data
-        .grouped(25)
+    Task
+      .parSequenceN(4) {
+        data
+          .grouped(25)
+          .toVector
+          .map(f)
+      }
+      .executeOn(io) *>
+    Task.unit
+
+  /** Gets differences between each pair of commits */
+  private def processLogEntriesParallel(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] =
+    batchRequests(logEntries) { batch =>
+      val result = batch
+        .sliding(2)
         .toVector
-        .map(f)
-    } *> Task.unit
+        .map { logs =>
+          val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
+          diffs.flatMap(processDiffs(logs(1), _))
+        }
+      Task.sequence(result) *> Task.unit
+    }
 
   /** When all the data is available, calculate the scores */
-  private def calculateScore(data: scala.collection.mutable.Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
-    data
-      .values
-      .map { entry =>
-        val allChanges = entry.changes.added + entry.changes.removed
-        val authorsScores = entry.authors.map {
-          case (author, stats) =>
-            val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
-            author -> stats.copy(score = userScore)
+  private def calculateScore(data: scala.collection.mutable.Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] =
+    Task.pure {
+      data
+        .values
+        .map { entry =>
+          val allChanges = entry.changes.added + entry.changes.removed
+          val authorsScores = entry.authors.map {
+            case (author, stats) =>
+              val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
+              author -> stats.copy(score = userScore)
+          }
+          entry.copy(authors = authorsScores)
         }
-        entry.copy(authors = authorsScores)
-      }
-      .toSeq
-  }
+        .toSeq
+    }
 
   /** Discovers all log entries in a GIT repo */
   private def getLogEntries(targetDirectory: String): Task[Seq[GitLogEntry]] =

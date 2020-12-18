@@ -18,7 +18,10 @@ object ElasticUtils {
       .deferFutureAction { implicit s =>
         client.execute(indexExists(index))
       }
-      .flatMap(interpretResponse(_.exists))
+      .flatMap {
+        case RequestSuccess(_, _, _, result) => Task(result.exists)
+        case RequestFailure(_, _, _, error)  => Task(false)
+      }
 
   def indexCreate(index: String): Task[Unit] =
     Task
@@ -36,19 +39,6 @@ object ElasticUtils {
       }
       .flatMap(interpretResponse(_ => ()))
 
-  def searchDirectories(index: String, directories: Vector[String]): Task[Unit] =
-    Task
-      .deferFutureAction { implicit s =>
-        client.execute {
-          val request = search(index).query {
-            boolQuery().should(directories.map(x => matchQuery("path", x)))
-          }
-          println(s"REQUEST: ${request.show}")
-          request
-        }
-      }
-      .flatMap(interpretResponse(x => x))
-
   def insertDoc(index: String, docs: Seq[StatsEntry]): Task[Unit] = {
     Task
       .deferFutureAction { implicit s =>
@@ -61,13 +51,8 @@ object ElasticUtils {
                 fields = Seq(
                   SimpleFieldValue("path", x.path.name),
                   SimpleFieldValue("directSubdirs", x.children.map(_.name).toList),
-                  SimpleFieldValue(
-                    "parent",
-                    x.parent match {
-                      case Some(value) => value.name
-                      case None        => "none"
-                    },
-                  ),
+                  // parent is not a list, need to change output
+                  SimpleFieldValue("parent", x.parent.getOrElse("none")),
                   SimpleFieldValue("authors", x.authors.map(as => as._1.show -> as._2.score)),
                 ),
               ),
