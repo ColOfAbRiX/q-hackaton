@@ -13,12 +13,12 @@ object ElasticUtils {
     ElasticClient(JavaClient(ElasticProperties("http://localhost:9200")))
   }
 
-  def indexExists(index: String): Task[Boolean] =
+  def doesIndexExist(index: String): Task[Boolean] =
     Task
       .deferFutureAction { implicit s =>
-        client.execute(getIndex(Seq(index)))
+        client.execute(indexExists(index))
       }
-      .flatMap(interpretResponse(_.contains(index)))
+      .flatMap(interpretResponse(_.exists))
 
   def indexCreate(index: String): Task[Unit] =
     Task
@@ -61,10 +61,13 @@ object ElasticUtils {
                 fields = Seq(
                   SimpleFieldValue("path", x.path.name),
                   SimpleFieldValue("directSubdirs", x.children.map(_.name).toList),
-                  SimpleFieldValue("parent", x.parent match {
-                    case Some(value) => value.name
-                    case None => "none"
-                  }),
+                  SimpleFieldValue(
+                    "parent",
+                    x.parent match {
+                      case Some(value) => value.name
+                      case None        => "none"
+                    },
+                  ),
                   SimpleFieldValue("authors", x.authors.map(as => as._1.show -> as._2.score)),
                 ),
               ),

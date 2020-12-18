@@ -33,7 +33,7 @@ object Main extends TaskApp {
 
   private def initElasticIndex(index: String): Task[Unit] =
     for {
-      indexPresent <- ElasticUtils.indexExists(index)
+      indexPresent <- ElasticUtils.doesIndexExist(index)
       _            <- if (indexPresent) ElasticUtils.indexDelete(index) else Task.unit
       _            <- if (!indexPresent) ElasticUtils.indexCreate(index) else Task.unit
       _            <- Task(println(s"Initialised $index"))
@@ -68,7 +68,7 @@ object Main extends TaskApp {
     Utils
       .run(targetDirectory, List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
       .map {
-        _.map(GitLogEntry.fromOutput).sortBy(_.datetime)
+        _.map(GitLogEntry.fromOutput).sortBy(_.datetime).take(500)
       }
 
   /** Gets differences between each pair of commits */
