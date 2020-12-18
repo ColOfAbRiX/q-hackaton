@@ -5,13 +5,11 @@ import hackaton.Utils._
 import monix.eval.{ Task, TaskApp }
 import java.nio.file._
 import scala.annotation.tailrec
-import monix.execution.Scheduler
 
 object Main extends TaskApp {
 
+  // FIXME: SOOOOOoo ugly
   val storage = scala.collection.mutable.Map[RepoPath, StatsEntry]()
-
-  private val io = Scheduler.io()
 
   def run(args: List[String]): Task[ExitCode] =
     args.headOption match {
@@ -22,49 +20,27 @@ object Main extends TaskApp {
           _          <- initElasticIndex(repoIndex)
           logEntries <- getLogEntries(targetDirectory)
           _          <- Task(println(s"Discovered ${logEntries.size} commits"))
-          _          <- processLogEntries(targetDirectory, logEntries)
+          _          <- processLogEntriesParallel(targetDirectory, logEntries)
           _          <- Task(println(s"Finished processing"))
           scores     <- calculateScore(storage)
           _          <- Task(println(s"Calculated scores for ${scores.size} paths"))
           _          <- batchRequests(scores)(ElasticUtils.insertDoc(repoIndex, _))
           _          <- Task(println(s"Data inserted into ElasticSearch"))
+          _          <- Task(ElasticUtils.client.close())
         } yield ExitCode.Success
 
       case None =>
         Task(System.err.println("Usage: MyApp name")).as(ExitCode(2))
     }
 
+  /** Make sure the index we use is always clean at startup */
   private def initElasticIndex(index: String): Task[Unit] =
     for {
       indexPresent <- ElasticUtils.doesIndexExist(index)
-      _            <- if (indexPresent) ElasticUtils.indexDelete(index) else Task.unit
-      _            <- if (!indexPresent) ElasticUtils.indexCreate(index) else Task.unit
-      _            <- Task(println(s"Initialised $index"))
+      //_            <- if (indexPresent) ElasticUtils.indexDelete(index) else Task.unit
+      //_            <- if (!indexPresent) ElasticUtils.indexCreate(index) else Task.unit
+      _ <- Task(println(s"Initialised $index"))
     } yield ()
-
-  private def batchRequests[A, B](data: Seq[A])(f: Seq[A] => Task[B]): Task[Unit] =
-    Task
-      .parSequenceN(4) {
-        data
-          .grouped(25)
-          .toVector
-          .map(f)
-      }
-      .executeOn(io) *>
-    Task.unit
-
-  /** Gets differences between each pair of commits */
-  private def processLogEntriesParallel(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] =
-    batchRequests(logEntries) { batch =>
-      val result = batch
-        .sliding(2)
-        .toVector
-        .map { logs =>
-          val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
-          diffs.flatMap(processDiffs(logs(1), _))
-        }
-      Task.sequence(result) *> Task.unit
-    }
 
   /** When all the data is available, calculate the scores */
   private def calculateScore(data: scala.collection.mutable.Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] =
@@ -88,22 +64,35 @@ object Main extends TaskApp {
     Utils
       .run(targetDirectory, List("git", "log", "--pretty=format:" + GitLogEntry.gitFormat))
       .map {
-        _.map(GitLogEntry.fromOutput).sortBy(_.datetime).take(500)
+        _.map(GitLogEntry.fromOutput).sortBy(_.datetime).take(10)
       }
 
+  ///** Gets differences between each pair of commits */
+  //private def processLogEntries(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
+  //  batchRequests(logEntries) { x =>
+  //    val result = x
+  //      .sliding(2)
+  //      .toVector
+  //      .map { logs =>
+  //        interpretCommits(targetDirectory, logs(1), logs(0))
+  //          .flatMap(processDiffs(logs(1), _))
+  //      }
+  //    Task.sequence(result) *> Task.unit
+  //  }
+  //}
+
   /** Gets differences between each pair of commits */
-  private def processLogEntries(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
-    batchRequests(logEntries)(x => {
-      val result = x
+  private def processLogEntriesParallel(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] =
+    batchRequests(logEntries) { batch =>
+      val result = batch
         .sliding(2)
         .toVector
         .map { logs =>
-          interpretCommits(targetDirectory, logs(1), logs(0))
-            .flatMap(processDiffs(logs(1), _))
+          val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
+          diffs.flatMap(processDiffs(logs(1), _))
         }
       Task.sequence(result) *> Task.unit
-    })
-  }
+    }
 
   /** Given two commits it discovers the differences */
   private def interpretCommits(

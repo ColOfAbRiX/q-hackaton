@@ -43,21 +43,18 @@ object ElasticUtils {
     Task
       .deferFutureAction { implicit s =>
         client.execute {
-          BulkRequest(
-            docs.map(x =>
-              IndexRequest(
-                index = index,
-                id = Option(x.path.name),
-                fields = Seq(
-                  SimpleFieldValue("path", x.path.name),
-                  SimpleFieldValue("directSubdirs", x.children.map(_.name).toList),
-                  // parent is not a list, need to change output
-                  SimpleFieldValue("parent", x.parent.getOrElse("none")),
-                  SimpleFieldValue("authors", x.authors.map(as => as._1.show -> as._2.score)),
-                ),
-              ),
-            ),
-          )
+          val allRequests = docs
+            .map { statsEntry =>
+              val fields: Seq[FieldValue] = Seq(
+                SimpleFieldValue("path", statsEntry.path.name),
+                SimpleFieldValue("directSubdirs", statsEntry.children.map(_.name).toList),
+                SimpleFieldValue("parent", statsEntry.parent.map(_.name).getOrElse("none")),
+                SimpleFieldValue("authors", statsEntry.authors.map(as => as._1.show -> as._2.score)),
+              )
+              IndexRequest(index = index, id = Option(statsEntry.path.name), fields = fields)
+            }
+
+          BulkRequest(allRequests)
         }
       }
       .flatMap(interpretResponse(x => x))
