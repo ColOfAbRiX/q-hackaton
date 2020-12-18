@@ -3,7 +3,6 @@ package hackaton
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s._
 import com.sksamuel.elastic4s.http.JavaClient
-import com.sksamuel.elastic4s.requests.bulk.BulkRequest
 import com.sksamuel.elastic4s.requests.indexes.IndexRequest
 import monix.eval.Task
 
@@ -39,26 +38,20 @@ object ElasticUtils {
       }
       .flatMap(interpretResponse(_ => ()))
 
-  def insertDoc(index: String, docs: Seq[StatsEntry]): Task[Unit] = {
+  def insertDoc(index: String, doc: StatsEntry): Task[Unit] =
     Task
       .deferFutureAction { implicit s =>
         client.execute {
-          val allRequests = docs
-            .map { statsEntry =>
-              val fields: Seq[FieldValue] = Seq(
-                SimpleFieldValue("path", statsEntry.path.name),
-                SimpleFieldValue("directSubdirs", statsEntry.children.map(_.name).toList),
-                SimpleFieldValue("parent", statsEntry.parent.map(_.name).getOrElse("none")),
-                SimpleFieldValue("authors", statsEntry.authors.map(as => as._1.show -> as._2.score)),
-              )
-              IndexRequest(index = index, id = Option(statsEntry.path.name), fields = fields)
-            }
-
-          BulkRequest(allRequests)
+          val fields: Seq[FieldValue] = Seq(
+            SimpleFieldValue("path", doc.path.name),
+            SimpleFieldValue("directSubdirs", doc.children.map(_.name).toList),
+            SimpleFieldValue("parent", doc.parent.map(_.name).getOrElse("none")),
+            SimpleFieldValue("authors", doc.authors.map(as => as._1.show -> as._2.score)),
+          )
+          IndexRequest(index = index, id = Option(doc.path.name), fields = fields)
         }
       }
       .flatMap(interpretResponse(x => x))
-  }
 
   private def interpretResponse[A, B](f: A => B)(response: Response[A]): Task[B] =
     response match {
