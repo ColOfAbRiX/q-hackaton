@@ -2,7 +2,7 @@ package hackaton
 
 import cats.effect.ExitCode
 import hackaton.Utils._
-import monix.eval.{ Task, TaskApp }
+import monix.eval.{Task, TaskApp}
 
 import java.nio.file._
 import scala.annotation.tailrec
@@ -22,7 +22,7 @@ object Main extends TaskApp {
           _          <- Task(println(s"Discovered ${logEntries.size} commits"))
           _          <- processLogEntriesParallel(targetDirectory, logEntries)
           _          <- Task(println(s"Finished processing"))
-          scores     <- calculateScore(storage.toMap)
+          scores     <- calculateScore(storage)
           _          <- Task(println(s"Calculated scores for ${scores.size} paths"))
           _          <- batchRequests(scores)(ElasticUtils.insertDoc(repoIndex, _))
           _          <- Task(println(s"Data inserted into ElasticSearch"))
@@ -51,30 +51,15 @@ object Main extends TaskApp {
   /** Gets differences between each pair of commits */
   private def processLogEntriesParallel(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
     batchRequests(logEntries)(x => {
-      val result = x.sliding(2)
+      val result = x
+        .sliding(2)
         .toVector
         .map { logs =>
-          val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
-          diffs.flatMap(processDiffs(logs(1), _))
+          interpretCommits(targetDirectory, logs(1), logs(0))
+            .flatMap(processDiffs(logs(1), _))
         }
       Task.sequence(result) *> Task.unit
     })
-  }
-
-  /** When all the data is available, calculate the scores */
-  private def calculateScore(data: Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
-    data
-      .values
-      .map { entry =>
-        val allChanges = entry.changes.added + entry.changes.removed
-        val authorsScores = entry.authors.map {
-          case (author, stats) =>
-            val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
-            author -> stats.copy(score = userScore)
-        }
-        entry.copy(authors = authorsScores)
-      }
-      .toSeq
   }
 
   /** Discovers all log entries in a GIT repo */
@@ -86,17 +71,17 @@ object Main extends TaskApp {
       }
 
   /** Gets differences between each pair of commits */
-  private def processLogEntries(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
-    val result = logEntries
-      .sliding(2)
-      .toVector
-      .map { logs =>
-        val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
-        diffs.flatMap(processDiffs(logs(1), _))
-      }
-
-    Task.sequence(result) *> Task.unit
-  }
+//  private def processLogEntries(targetDirectory: String, logEntries: Seq[GitLogEntry]): Task[Unit] = {
+//    val result = logEntries
+//      .sliding(2)
+//      .toVector
+//      .map { logs =>
+//        val diffs = interpretCommits(targetDirectory, logs(1), logs(0))
+//        diffs.flatMap(processDiffs(logs(1), _))
+//      }
+//
+//    Task.sequence(result) *> Task.unit
+//  }
 
   /** Given two commits it discovers the differences */
   private def interpretCommits(
@@ -136,6 +121,22 @@ object Main extends TaskApp {
       storage.update(dir, newStatsEntry)
       updateMyParent(newStatsEntry, commit.author, changes)
     }
+  }
+
+  /** When all the data is available, calculate the scores */
+  private def calculateScore(data: scala.collection.mutable.Map[RepoPath, StatsEntry]): Task[Seq[StatsEntry]] = Task.pure {
+    data
+      .values
+      .map { entry =>
+        val allChanges = entry.changes.added + entry.changes.removed
+        val authorsScores = entry.authors.map {
+          case (author, stats) =>
+            val userScore = (stats.changes.added + Math.abs(stats.changes.removed)).toDouble / allChanges.toDouble
+            author -> stats.copy(score = userScore)
+        }
+        entry.copy(authors = authorsScores)
+      }
+      .toSeq
   }
 
   @tailrec
